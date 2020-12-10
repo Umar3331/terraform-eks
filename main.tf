@@ -1,14 +1,18 @@
 ###############################################################################
-################################ DATA SOURCES #################################
+################################ VARIABLES ####################################
 ###############################################################################
 
 variable "cluster_name" {
   default = "test-cluster"
 }
 
-provider "aws" {
-  region = "eu-central-1"
+variable "vpc_name" {
+  default = "test-vpc"
 }
+
+###############################################################################
+################################ DATA SOURCES #################################
+###############################################################################
 
 # Search for latest Ubuntu server image
 data "aws_ami" "ubuntu_latest" {
@@ -47,12 +51,12 @@ data "aws_availability_zones" "available" {
 
 module "vpc" {
   source = "terraform-aws-modules/vpc/aws"
-  name   = "test-vpc"
+  name   = var.vpc_name
 
   cidr            = "10.0.0.0/16"
   azs             = data.aws_availability_zones.available.names
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.6.0/24"]
+  private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
+  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
 
   enable_dns_hostnames = true
   enable_dns_support   = true
@@ -79,7 +83,7 @@ module "vpc" {
 }
 
 ###############################################################################
-############################### HERE BE DRAGONS ###############################
+############################### HERE BE MONSTERS ##############################
 ###############################################################################
 
 data "aws_eks_cluster" "cluster" {
@@ -118,6 +122,7 @@ module "eks" {
   cluster_version = "1.17"
   subnets         = module.vpc.private_subnets
   vpc_id          = module.vpc.vpc_id
+  # cluster_enabled_log_types = ["audit", "authenticator"]
 
   worker_groups = [
     {
@@ -131,12 +136,6 @@ module "eks" {
       instance_type        = data.aws_ec2_instance_type_offering.ubuntu_micro.id
       subnets              = [module.vpc.private_subnets[1]]
       asg_desired_capacity = 1
-    },
-    {
-      name                 = "worker-group-3"
-      instance_type        = data.aws_ec2_instance_type_offering.ubuntu_micro.id
-      subnets              = [module.vpc.private_subnets[2]]
-      asg_desired_capacity = 1
     }
   ]
 }
@@ -148,28 +147,38 @@ provider "kubernetes" {
 }
 
 ###############################################################################
-#################################### TODO #####################################
+############################### S3 BUCKETS ####################################
 ###############################################################################
 
-# Add s3 bucket and vault
+# Add your own s3 bucket names
 
 module "s3_bucket_for_logs" {
   source = "terraform-aws-modules/s3-bucket/aws"
 
-  bucket = "test-bucket-cloud-auto-acc-interns"
+  bucket = "log-bucket-test-assigm"
   acl    = "log-delivery-write"
-  
+
   logging = {
-    target_bucket = "test-bucket-cloud-auto-acc-interns"
+    target_bucket = "log-bucket-test-assigm"
     target_prefix = "log/"
   }
-  
+
   # Allow deletion of non-empty bucket
   force_destroy = true
 
   attach_elb_log_delivery_policy = true
-}      
-      
+}
+
+resource "aws_s3_bucket" "b" {
+  bucket = "test-bucket-assigment-test"
+  acl    = "public-read"
+
+  tags = {
+    Name        = "Jupyterhub"
+    Environment = "Dev"
+  }
+}
+
 ###############################################################################
 ################################# OUTPUTS #####################################
 ###############################################################################
