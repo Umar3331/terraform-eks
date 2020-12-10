@@ -6,6 +6,10 @@ variable "cluster_name" {
   default = "test-cluster"
 }
 
+provider "aws" {
+  region = "eu-central-1"
+}
+
 # Search for latest Ubuntu server image
 data "aws_ami" "ubuntu_latest" {
   most_recent = true
@@ -149,6 +153,23 @@ provider "kubernetes" {
 
 # Add s3 bucket and vault
 
+module "s3_bucket_for_logs" {
+  source = "terraform-aws-modules/s3-bucket/aws"
+
+  bucket = "test-bucket-cloud-auto-acc-interns"
+  acl    = "log-delivery-write"
+  
+  logging = {
+    target_bucket = "test-bucket-cloud-auto-acc-interns"
+    target_prefix = "log/"
+  }
+  
+  # Allow deletion of non-empty bucket
+  force_destroy = true
+
+  attach_elb_log_delivery_policy = true
+}      
+      
 ###############################################################################
 ################################# OUTPUTS #####################################
 ###############################################################################
