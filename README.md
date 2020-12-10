@@ -9,7 +9,7 @@
 8) Edit **values.yml** file and paste generated hex.
 10) Set up helm: **helm repo add jupyterhub https://jupyterhub.github.io/helm-chart** and **helm repo update**.
 11) Deploy j-hub: **helm install jupyterhub jupyterhub/jupyterhub --values values.yml**.
-12) Wait a bit and then get j-hub address: **kubectl —namespace=default get svc proxy-public**.
+12) Wait a bit and then get j-hub address: **kubectl --namespace=default get svc proxy-public**.
 13) Password and login is kept in values.yml file. By default: **admin** and **supersecretpassword!**.
 14) To clean up run **terraform destroy**.
 
