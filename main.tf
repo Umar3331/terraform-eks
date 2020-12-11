@@ -117,12 +117,12 @@ module "ebs_csi_driver_controller" {
 ###############################################################################
 
 module "eks" {
-  source          = "terraform-aws-modules/eks/aws"
-  cluster_name    = var.cluster_name
-  cluster_version = "1.17"
-  subnets         = module.vpc.private_subnets
-  vpc_id          = module.vpc.vpc_id
-  # cluster_enabled_log_types = ["audit", "authenticator"]
+  source                    = "terraform-aws-modules/eks/aws"
+  cluster_name              = var.cluster_name
+  cluster_version           = "1.17"
+  subnets                   = module.vpc.private_subnets
+  vpc_id                    = module.vpc.vpc_id
+  cluster_enabled_log_types = ["audit", "api", "authenticator", "controllerManager", "scheduler"]
 
   worker_groups = [
     {
@@ -177,6 +177,26 @@ resource "aws_s3_bucket" "b" {
     Name        = "Jupyterhub"
     Environment = "Dev"
   }
+}
+
+resource "aws_kms_key" "mykey" {
+  description             = "This key is used to encrypt bucket objects"
+  deletion_window_in_days = 10
+}
+
+resource "aws_s3_bucket" "b2" {
+  bucket = "test-bucket-assigment-test-encrypted"
+  acl    = "public-read"
+
+  server_side_encryption_configuration {
+    rule {
+      apply_server_side_encryption_by_default {
+        kms_master_key_id = aws_kms_key.mykey.arn
+        sse_algorithm     = "aws:kms"
+      }
+    }
+  }
+
 }
 
 ###############################################################################
