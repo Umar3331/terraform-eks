@@ -31,13 +31,14 @@ data "aws_ami" "ubuntu_latest" {
 }
 
 # Search for instance type
+# Probably t2.small is better, but no time for testing
 data "aws_ec2_instance_type_offering" "ubuntu_micro" {
   filter {
     name   = "instance-type"
     values = ["t2.medium"]
   }
 
-  preferred_instance_types = ["t3.medium"]
+  preferred_instance_types = ["t2.medium"]
 }
 
 # Availability zones data source to get list of AWS Availability zones
@@ -48,6 +49,9 @@ data "aws_availability_zones" "available" {
 ###############################################################################
 ################################### VPC #######################################
 ###############################################################################
+
+# VPC module. Possible to add more config. See the docs
+# https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws/latest
 
 module "vpc" {
   source = "terraform-aws-modules/vpc/aws"
@@ -83,46 +87,23 @@ module "vpc" {
 }
 
 ###############################################################################
-############################### HERE BE MONSTERS ##############################
-###############################################################################
-
-data "aws_eks_cluster" "cluster" {
-  name = module.eks.cluster_id
-}
-
-data "aws_eks_cluster_auth" "cluster" {
-  name = module.eks.cluster_id
-}
-
-data "tls_certificate" "cert" {
-  url = data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer
-}
-
-resource "aws_iam_openid_connect_provider" "openid_connect" {
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.cert.certificates.0.sha1_fingerprint]
-  url             = data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer
-}
-
-module "ebs_csi_driver_controller" {
-  source = "DrFaust92/ebs-csi-driver/kubernetes"
-
-  ebs_csi_controller_role_name               = "ebs-csi-driver-controller"
-  ebs_csi_controller_role_policy_name_prefix = "ebs-csi-driver-policy"
-  oidc_url                                   = aws_iam_openid_connect_provider.openid_connect.url
-}
-
-###############################################################################
 ############################### EKS CLUSTER ###################################
 ###############################################################################
 
+# Module that creates EKS cluster
+# Possible to add more config inputs
+# See the docs:
+# https://registry.terraform.io/modules/terraform-aws-modules/eks/aws/latest
+
 module "eks" {
-  source                    = "terraform-aws-modules/eks/aws"
-  cluster_name              = var.cluster_name
-  cluster_version           = "1.17"
-  subnets                   = module.vpc.private_subnets
-  vpc_id                    = module.vpc.vpc_id
-  cluster_enabled_log_types = ["audit", "api", "authenticator", "controllerManager", "scheduler"]
+  source          = "terraform-aws-modules/eks/aws"
+  cluster_name    = var.cluster_name
+  cluster_version = "1.17"
+  subnets         = module.vpc.private_subnets
+  vpc_id          = module.vpc.vpc_id
+  ### Here is possible to add Cluster log groups
+  ### Uncommented to make JanisK life easier
+  # cluster_enabled_log_types = ["audit", "api", "authenticator", "controllerManager", "scheduler"]
 
   worker_groups = [
     {
@@ -138,7 +119,23 @@ module "eks" {
       asg_desired_capacity = 1
     }
   ]
+
 }
+
+###############################################################################
+############################### KUBERNETES CONFIG #############################
+###############################################################################
+
+# Data sources used to connect EKS to VPC
+
+data "aws_eks_cluster" "cluster" {
+  name = module.eks.cluster_id
+}
+
+data "aws_eks_cluster_auth" "cluster" {
+  name = module.eks.cluster_id
+}
+
 provider "kubernetes" {
   host                   = data.aws_eks_cluster.cluster.endpoint
   token                  = data.aws_eks_cluster_auth.cluster.token
@@ -146,63 +143,46 @@ provider "kubernetes" {
   load_config_file       = false
 }
 
+
+###############################################################################
+############################### HELM J-HUB ####################################
+###############################################################################
+
+# Helm provider installs in Kubernetes cluster
+
+provider "helm" {
+
+  kubernetes {
+    host                   = data.aws_eks_cluster.cluster.endpoint
+    token                  = data.aws_eks_cluster_auth.cluster.token
+    cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority.0.data)
+    load_config_file       = false
+  }
+}
+
+# This thing pulls J-hub Helm chart and uses your values.yaml file
+
+resource "helm_release" "jhub" {
+  name       = "jupyterhub"
+  repository = "https://jupyterhub.github.io/helm-chart/"
+  chart      = "jupyterhub"
+
+  values = [
+    file("values.yaml")
+  ]
+}
+
 ###############################################################################
 ############################### S3 BUCKETS ####################################
 ###############################################################################
 
-# Add your own s3 bucket names
-
-module "s3_bucket_for_logs" {
-  source = "terraform-aws-modules/s3-bucket/aws"
-
-  bucket = "log-bucket-test-assigm"
-  acl    = "log-delivery-write"
-
-  logging = {
-    target_bucket = "log-bucket-test-assigm"
-    target_prefix = "log/"
-  }
-
-  # Allow deletion of non-empty bucket
-  force_destroy = true
-
-  attach_elb_log_delivery_policy = true
-}
-
-resource "aws_s3_bucket" "b" {
-  bucket = "test-bucket-assigment-test"
-  acl    = "public-read"
-
-  tags = {
-    Name        = "Jupyterhub"
-    Environment = "Dev"
-  }
-}
-
-resource "aws_kms_key" "mykey" {
-  description             = "This key is used to encrypt bucket objects"
-  deletion_window_in_days = 10
-}
-
-resource "aws_s3_bucket" "b2" {
-  bucket = "test-bucket-assigment-test-encrypted"
-  acl    = "public-read"
-
-  server_side_encryption_configuration {
-    rule {
-      apply_server_side_encryption_by_default {
-        kms_master_key_id = aws_kms_key.mykey.arn
-        sse_algorithm     = "aws:kms"
-      }
-    }
-  }
-
-}
+# Deleted all S3 buckets for now, add your buckets when finished
 
 ###############################################################################
 ################################# OUTPUTS #####################################
 ###############################################################################
 
+# Possible to add more outputs
 
 output "cluster_id" {
   description = "EKS cluster ID."
@@ -217,4 +197,16 @@ output "cluster_endpoint" {
 output "config_map_aws_auth" {
   description = "A kubernetes configuration to authenticate to EKS cluster."
   value       = module.eks.config_map_aws_auth
+}
+
+# Aws and kubectl commands to show IP where to acess Jupyterhub
+resource "null_resource" "Jhub" {
+
+  provisioner "local-exec" {
+    command = "aws eks --region eu-central-1 update-kubeconfig --name test-cluster"
+  }
+
+  provisioner "local-exec" {
+    command = "kubectl --namespace=default get svc proxy-public"
+  }
 }
