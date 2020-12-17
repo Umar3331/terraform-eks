@@ -13,7 +13,7 @@
 3) Run **terraform apply**. Resource creation should take approx 10 - 15 minutes.
 4) Install and configure **aws** & **kubectl**
 5) Generate hex values by running command: **openssl rand -hex 32**.
-6) Edit **values.yaml** file and paste generated hex. Use **values.yml** to add more config.
+6) Edit **values.yml** file and paste generated hex. Use **values.yml** to add more config.
 7) Script should print out j-hub address. If not, proceed with **aws eks --region eu-central-1 update-kubeconfig --name test-cluster** and **kubectl --namespace=default get svc proxy-public**.
 8) Password and login is kept in values.yml file. By default: **admin** and **supersecretpassword!**.
 9) To clean up run **terraform destroy**.
