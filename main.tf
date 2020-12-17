@@ -1,13 +1,23 @@
+
+provider "aws" {
+  region = "eu-central-1"
+}
+
 ###############################################################################
 ################################ VARIABLES ####################################
 ###############################################################################
 
+# Change accordingly
 variable "cluster_name" {
   default = "test-cluster"
 }
 
 variable "vpc_name" {
   default = "test-vpc"
+}
+
+variable "hub_namespace" {
+  default = "default"
 }
 
 ###############################################################################
@@ -40,6 +50,8 @@ data "aws_ec2_instance_type_offering" "ubuntu_micro" {
 
   preferred_instance_types = ["t2.medium"]
 }
+
+data "aws_region" "current" {}
 
 # Availability zones data source to get list of AWS Availability zones
 data "aws_availability_zones" "available" {
@@ -161,11 +173,15 @@ provider "helm" {
 }
 
 # This thing pulls J-hub Helm chart and uses your values.yaml file
+# Uses default namespace, but you can change that
+# See the docs:
+# https://registry.terraform.io/providers/hashicorp/helm/latest/docs/resources/release
 
 resource "helm_release" "jhub" {
   name       = "jupyterhub"
   repository = "https://jupyterhub.github.io/helm-chart/"
   chart      = "jupyterhub"
+  namespace  = var.hub_namespace
 
   values = [
     file("values.yml")
@@ -179,34 +195,34 @@ resource "helm_release" "jhub" {
 # Deleted all S3 buckets for now, add your buckets when finished
 
 ###############################################################################
-################################# OUTPUTS #####################################
+############################## J-HUB ADRESS ###################################
 ###############################################################################
 
-# Possible to add more outputs
+resource "time_sleep" "wait_30_seconds" {
+  depends_on = [helm_release.jhub]
 
-output "cluster_id" {
-  description = "EKS cluster ID."
-  value       = module.eks.cluster_id
-}
-
-output "cluster_endpoint" {
-  description = "Endpoint for EKS control plane."
-  value       = module.eks.cluster_endpoint
-}
-
-output "config_map_aws_auth" {
-  description = "A kubernetes configuration to authenticate to EKS cluster."
-  value       = module.eks.config_map_aws_auth
+  create_duration = "30s"
 }
 
 # Aws and kubectl commands to show IP where to acess Jupyterhub
-resource "null_resource" "Jhub" {
+
+resource "null_resource" "Jhub-access" {
+  depends_on = [time_sleep.wait_30_seconds]
 
   provisioner "local-exec" {
-    command = "aws eks --region eu-central-1 update-kubeconfig --name test-cluster"
+    command = "aws eks --region $REGION update-kubeconfig --name $CLUSTER_NAME"
+
+    environment = {
+      REGION       = data.aws_region.current.name
+      CLUSTER_NAME = var.cluster_name
+    }
   }
 
   provisioner "local-exec" {
-    command = "kubectl --namespace=default get svc proxy-public"
+    command = "kubectl --namespace=$NAMESPACE get svc proxy-public"
+
+    environment = {
+      NAMESPACE = var.hub_namespace
+    }
   }
 }
