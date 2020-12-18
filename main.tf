@@ -192,7 +192,40 @@ resource "helm_release" "jhub" {
 ############################### S3 BUCKETS ####################################
 ###############################################################################
 
-# Deleted all S3 buckets for now, add your buckets when finished
+resource "aws_kms_key" "mykey" {
+  description             = "This key is used to encrypt bucket objects"
+  deletion_window_in_days = 10
+}
+
+resource "aws_s3_bucket" "cloud-and-automation-interns-together-a-team" {
+  bucket = "cloud-and-automation-interns-together-a-team"
+
+  server_side_encryption_configuration {
+    rule {
+      apply_server_side_encryption_by_default {
+        kms_master_key_id = aws_kms_key.mykey.arn
+        sse_algorithm     = "aws:kms"
+      }
+    }
+  }
+}
+
+resource "kubernetes_namespace" "vault" {
+  metadata {
+    name = "vault"
+  }
+}
+
+resource "helm_release" "vault" {
+  name = "vault"
+  repository = "https://helm.releases.hashicorp.com/"
+  chart = "vault"
+  namespace = kubernetes_namespace.vault.metadata.0.name
+
+  values = [
+    file("values.yaml")
+  ]
+}
 
 ###############################################################################
 ############################## J-HUB ADRESS ###################################
